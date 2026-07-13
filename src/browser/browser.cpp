@@ -20,10 +20,7 @@
 
 #include "../common/url_parser.hpp"
 #include "../common/stwp_msg.hpp"
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
+#include "../common/net.hpp"
 
 #include "types.hpp"
 #include "globals.hpp"
@@ -574,9 +571,9 @@ int main() {
             glfwSetWindowTitle(window, ("Starmap - " + tabs[active_tab_idx].title).c_str());
         }
         if (tab_to_close != -1) {
-            if (tabs[tab_to_close].active_socket_fd != -1) {
-                close(tabs[tab_to_close].active_socket_fd);
-                tabs[tab_to_close].active_socket_fd = -1;
+            if (net::is_valid(tabs[tab_to_close].active_socket_fd)) {
+                net::close(tabs[tab_to_close].active_socket_fd);
+                tabs[tab_to_close].active_socket_fd = net::kInvalidSocket;
             }
             
             // Delete its textures first!

@@ -3,6 +3,7 @@
 #include <vector>
 #include <unordered_map>
 #include "imgui.h"
+#include "../common/net.hpp"
 
 struct CssStyle {
     ImVec4 color = ImVec4(1, 1, 1, 1);
@@ -90,7 +91,7 @@ struct Tab {
     
     FetchResult active_page;
     bool new_page_ready = false;
-    int active_socket_fd = -1;
+    net::socket_t active_socket_fd = net::kInvalidSocket;
     
     DomNode page_dom;
     std::unordered_map<std::string, CssStyle> css_classes;
