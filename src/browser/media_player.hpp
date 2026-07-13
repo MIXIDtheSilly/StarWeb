@@ -1,7 +1,9 @@
 #pragma once
 #include <string>
-#include <chrono>
 
+// The build links exactly one backend behind impl_:
+//   macOS         -> media_player_mac.mm     (AVFoundation)
+//   Windows/Linux -> media_player_ffmpeg.cpp (FFmpeg + miniaudio)
 class VideoPlayer {
 public:
     VideoPlayer(const std::string& filepath, bool audio_only = false);
@@ -29,17 +31,5 @@ public:
     int get_height() const;
 
 private:
-#ifdef __APPLE__
     void* impl_;
-#else
-    std::string filepath_;
-    bool is_audio_only_;
-    bool is_playing_;
-    double current_time_;
-    double duration_;
-    float volume_;
-    bool is_muted_;
-    bool loop_;
-    std::chrono::steady_clock::time_point last_update_time_;
-#endif
 };

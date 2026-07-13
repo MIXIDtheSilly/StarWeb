@@ -1,0 +1,53 @@
+# Third-Party Licenses
+
+StarWeb's own code is MIT-licensed (see `LICENSE`). It depends on the
+following third-party software, either vendored directly in `src/thirdparty/`
+or linked as a system/vcpkg dependency.
+
+## FFmpeg (Windows / Linux media backend)
+
+- **License**: GNU Lesser General Public License, version 2.1 or later (LGPL-2.1+).
+- **How it's used**: dynamically linked (`.dll` on Windows, `.so` on Linux) via
+  `avcodec`, `avdevice`, `avfilter`, `avformat`, `swresample`, `swscale` — FFmpeg's
+  default feature set. StarWeb does not enable the `gpl` or `nonfree` vcpkg/build
+  features (no libx264, libx265, libvpx, libmp3lame, fdk-aac, etc.), so the build
+  stays under LGPL rather than GPL, and contains no unredistributable components.
+- **Unmodified**: StarWeb uses stock upstream FFmpeg; no patches are applied.
+- **Source**: https://ffmpeg.org — obtain matching source via `vcpkg` (Windows) or
+  your distro's package source (Linux), or from the FFmpeg project directly.
+- **Compliance notes**: dynamic linking means the LGPL's relinking requirement is
+  satisfied by construction (swap the `.dll`/`.so` for a compatible build and the
+  binaries still work). This file, plus `vcpkg`'s bundled
+  `share/ffmpeg/copyright` (LGPL-2.1 full text), serves as the required license
+  notice for redistributed binaries.
+
+## GLFW
+
+- **License**: zlib/libpng license.
+- **How it's used**: system/vcpkg dependency (not vendored) for windowing and
+  OpenGL context creation.
+- **Source**: https://www.glfw.org
+
+## Dear ImGui
+
+- **License**: MIT.
+- **How it's used**: vendored in `src/thirdparty/imgui/`, used unmodified for the
+  browser's UI.
+- **License text**: `src/thirdparty/imgui/LICENSE.txt`
+- **Source**: https://github.com/ocornut/imgui
+
+## miniaudio
+
+- **License**: public domain (Unlicense) or MIT-0, dual-licensed — user's choice.
+- **How it's used**: vendored single-header library (`src/thirdparty/miniaudio.h`)
+  for cross-platform audio output on the Windows/Linux FFmpeg media backend.
+- **Source**: https://miniaud.io
+
+## stb_image
+
+- **License**: public domain, with an MIT-equivalent license offered as an
+  alternative in the file for jurisdictions that don't recognize public domain
+  dedications.
+- **How it's used**: vendored single-header library (`src/thirdparty/stb_image.h`)
+  for decoding images (PNG/JPEG/etc.) embedded in fetched pages.
+- **Source**: https://github.com/nothings/stb

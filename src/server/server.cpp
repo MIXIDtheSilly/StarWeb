@@ -6,10 +6,7 @@
 #include <sstream>
 #include <filesystem>
 #include <cstring>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include "../common/net.hpp"
 #include "../common/stwp_msg.hpp"
 
 std::string sanitize_path(std::string path) {
@@ -51,7 +48,7 @@ std::string get_content_type(const std::string& path) {
     return "application/octet-stream";
 }
 
-void handle_client(int client_fd) {
+void handle_client(net::socket_t client_fd) {
     std::string buffer;
     char temp_buf[4096];
     StwpRequest req;
@@ -59,13 +56,10 @@ void handle_client(int client_fd) {
     bool request_parsed = false;
 
     // Set socket receive timeout (5 seconds)
-    struct timeval tv;
-    tv.tv_sec = 5;
-    tv.tv_usec = 0;
-    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+    net::set_recv_timeout(client_fd, 5);
 
     while (true) {
-        ssize_t bytes_received = recv(client_fd, temp_buf, sizeof(temp_buf), 0);
+        net::ssize_t_ bytes_received = recv(client_fd, temp_buf, sizeof(temp_buf), 0);
         if (bytes_received <= 0) {
             break; // Connection closed or timeout
         }
@@ -86,7 +80,7 @@ void handle_client(int client_fd) {
         res.headers["Connection"] = "close";
         std::string res_str = res.serialize();
         send(client_fd, res_str.data(), res_str.size(), 0);
-        close(client_fd);
+        net::close(client_fd);
         return;
     }
 
@@ -133,10 +127,12 @@ void handle_client(int client_fd) {
 
     std::string res_str = res.serialize();
     send(client_fd, res_str.data(), res_str.size(), 0);
-    close(client_fd);
+    net::close(client_fd);
 }
 
 int main(int argc, char* argv[]) {
+    net::Startup net_startup;
+
     int port = 8090;
     if (argc > 1) {
         try {
@@ -146,16 +142,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
+    net::socket_t server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (!net::is_valid(server_fd)) {
         std::cerr << "Failed to create socket." << std::endl;
         return 1;
     }
 
-    int opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    if (net::enable_reuseaddr(server_fd) < 0) {
         std::cerr << "setsockopt (SO_REUSEADDR) failed." << std::endl;
-        close(server_fd);
+        net::close(server_fd);
         return 1;
     }
 
@@ -166,13 +161,13 @@ int main(int argc, char* argv[]) {
 
     if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
         std::cerr << "Bind failed on port " << port << "." << std::endl;
-        close(server_fd);
+        net::close(server_fd);
         return 1;
     }
 
     if (listen(server_fd, 10) < 0) {
         std::cerr << "Listen failed." << std::endl;
-        close(server_fd);
+        net::close(server_fd);
         return 1;
     }
 
@@ -181,8 +176,8 @@ int main(int argc, char* argv[]) {
     while (true) {
         sockaddr_in client_address{};
         socklen_t addr_len = sizeof(client_address);
-        int client_fd = accept(server_fd, (struct sockaddr*)&client_address, &addr_len);
-        if (client_fd < 0) {
+        net::socket_t client_fd = accept(server_fd, (struct sockaddr*)&client_address, &addr_len);
+        if (!net::is_valid(client_fd)) {
             // Check for accept errors, but keep server running
             std::cerr << "Accept connection failed." << std::endl;
             continue;
@@ -192,6 +187,6 @@ int main(int argc, char* argv[]) {
         t.detach();
     }
 
-    close(server_fd);
+    net::close(server_fd);
     return 0;
 }

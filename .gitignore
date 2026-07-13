@@ -10,6 +10,13 @@ obj/
 *.a
 *.lib
 
+# CMake build directory
+build/
+build-linux/
+
+# vcpkg (Windows dependency manager checkout)
+vcpkg/
+
 # ImGui Auto-generated Layout
 imgui.ini
 
@@ -22,3 +29,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# cache
+
+/cache
