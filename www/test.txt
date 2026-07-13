@@ -1,0 +1,20 @@
+Starmap txt test
+
+If you can read this, your browser now supports loading txt file. that means you are tuff
+
+Here is some sample formatting:
+
+1. Code Snippet:
+   
+   #include <iostream>
+   int main() {
+       std::cout << "Hello Starmap!" << std::endl;
+       return 0;
+   }
+
+  ／l、   meow     
+（ﾟ､ ｡ ７         
+  l  ~ヽ       
+  じしf_,)ノ
+
+cool cat huh? also yeah no more examples

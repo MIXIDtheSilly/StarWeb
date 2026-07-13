@@ -318,6 +318,8 @@ DomNode parse_html_to_dom(const std::string& html, std::string& css_content) {
                     child.onclick = attr_val;
                 } else if (attr_name == "href") {
                     child.href = attr_val;
+                } else if (attr_name == "src") {
+                    child.src = attr_val;
                 } else if (attr_name == "id") {
                     child.id = attr_val;
                 } else if (attr_name == "style") {
@@ -330,12 +332,20 @@ DomNode parse_html_to_dom(const std::string& html, std::string& css_content) {
                     child.value = attr_val;
                 } else if (attr_name == "placeholder") {
                     child.placeholder = attr_val;
+                } else if (attr_name == "autoplay") {
+                    child.autoplay = true;
+                } else if (attr_name == "loop") {
+                    child.loop = true;
+                } else if (attr_name == "controls") {
+                    child.controls = true;
+                } else if (attr_name == "muted") {
+                    child.muted = true;
                 }
             }
 
             node_stack.back()->children.push_back(std::move(child));
             
-            if (!self_closing && tag_name != "hr" && tag_name != "img" && tag_name != "br" && tag_name != "meta" && tag_name != "link" && tag_name != "input") {
+            if (!self_closing && tag_name != "hr" && tag_name != "img" && tag_name != "br" && tag_name != "meta" && tag_name != "link" && tag_name != "input" && tag_name != "source") {
                 node_stack.push_back(&(node_stack.back()->children.back()));
             }
         } else {

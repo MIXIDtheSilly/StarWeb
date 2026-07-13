@@ -9,10 +9,29 @@
 #include <arpa/inet.h>
 #include <thread>
 #include <cstring>
+#include <algorithm>
+#include <cctype>
 
 std::string resolve_url(const std::string& base_url, const std::string& relative_url) {
     if (relative_url.empty()) return base_url;
     if (relative_url.find("://") != std::string::npos) {
+        auto opt_parsed = parse_url(relative_url);
+        if (opt_parsed) {
+            std::string scheme = opt_parsed->scheme;
+            std::string host = opt_parsed->host;
+            int port = opt_parsed->port;
+            std::string path = opt_parsed->path;
+            
+            std::string port_part = "";
+            if (scheme == "moon" && port != 8090) {
+                port_part = ":" + std::to_string(port);
+            } else if (scheme == "star" && port != 8490) {
+                port_part = ":" + std::to_string(port);
+            } else if (scheme != "moon" && scheme != "star") {
+                port_part = ":" + std::to_string(port);
+            }
+            return scheme + "://" + host + port_part + path;
+        }
         return relative_url;
     }
     
@@ -36,7 +55,16 @@ std::string resolve_url(const std::string& base_url, const std::string& relative
         }
     }
     
-    return scheme + "://" + host + ":" + std::to_string(port) + path;
+    std::string port_part = "";
+    if (scheme == "moon" && port != 8090) {
+        port_part = ":" + std::to_string(port);
+    } else if (scheme == "star" && port != 8490) {
+        port_part = ":" + std::to_string(port);
+    } else if (scheme != "moon" && scheme != "star") {
+        port_part = ":" + std::to_string(port);
+    }
+    
+    return scheme + "://" + host + port_part + path;
 }
 
 std::string find_title_in_dom(const DomNode& node) {
@@ -58,6 +86,33 @@ void find_stylesheets_in_dom(const DomNode& node, std::vector<std::string>& href
     }
     for (const auto& child : node.children) {
         find_stylesheets_in_dom(child, hrefs);
+    }
+}
+
+void find_images_in_dom(const DomNode& node, std::vector<std::string>& srcs) {
+    if (node.tag == "img") {
+        if (!node.src.empty()) {
+            srcs.push_back(node.src);
+        }
+    }
+    for (const auto& child : node.children) {
+        find_images_in_dom(child, srcs);
+    }
+}
+
+void find_media_in_dom(const DomNode& node, std::vector<std::string>& srcs) {
+    if (node.tag == "video" || node.tag == "audio") {
+        if (!node.src.empty()) {
+            srcs.push_back(node.src);
+        }
+    }
+    if (node.tag == "source") {
+        if (!node.src.empty()) {
+            srcs.push_back(node.src);
+        }
+    }
+    for (const auto& child : node.children) {
+        find_media_in_dom(child, srcs);
     }
 }
 
@@ -208,6 +263,24 @@ void start_async_fetch(int tab_id, const std::string& url_str, bool is_history_n
         final_url = "moon://" + final_url;
     }
 
+    auto opt_url = parse_url(final_url);
+    if (opt_url) {
+        std::string scheme = opt_url->scheme;
+        std::string host = opt_url->host;
+        int port = opt_url->port;
+        std::string path = opt_url->path;
+        
+        std::string port_part = "";
+        if (scheme == "moon" && port != 8090) {
+            port_part = ":" + std::to_string(port);
+        } else if (scheme == "star" && port != 8490) {
+            port_part = ":" + std::to_string(port);
+        } else if (scheme != "moon" && scheme != "star") {
+            port_part = ":" + std::to_string(port);
+        }
+        final_url = scheme + "://" + host + port_part + path;
+    }
+
     std::lock_guard<std::mutex> lock(fetch_mutex);
     Tab* tab = find_tab_by_id(tab_id);
     if (!tab) return;
@@ -237,21 +310,132 @@ void start_async_fetch(int tab_id, const std::string& url_str, bool is_history_n
         FetchResult res = perform_fetch(tab_id, final_url, true);
         
         if (res.success) {
-            std::string css_content = "";
-            res.dom = parse_html_to_dom(res.body, css_content);
-            
-            std::vector<std::string> stylesheet_hrefs;
-            find_stylesheets_in_dom(res.dom, stylesheet_hrefs);
-            
-            for (const auto& href : stylesheet_hrefs) {
-                std::string sheet_url = resolve_url(final_url, href);
-                FetchResult sheet_res = perform_fetch(tab_id, sheet_url, false);
-                if (sheet_res.success) {
-                    css_content += "\n" + sheet_res.body;
+            std::string content_type = "";
+            auto it = res.headers.find("content-type");
+            if (it != res.headers.end()) {
+                content_type = it->second;
+                std::transform(content_type.begin(), content_type.end(), content_type.begin(), [](unsigned char c) { return std::tolower(c); });
+            }
+
+            bool is_html = true;
+            bool is_image = false;
+            bool is_video = false;
+            bool is_audio = false;
+
+            if (!content_type.empty() && content_type != "application/octet-stream") {
+                if (content_type.find("text/html") == std::string::npos) {
+                    is_html = false;
+                }
+                if (content_type.rfind("image/", 0) == 0) {
+                    is_image = true;
+                } else if (content_type.rfind("video/", 0) == 0) {
+                    is_video = true;
+                } else if (content_type.rfind("audio/", 0) == 0) {
+                    is_audio = true;
+                }
+            } else {
+                auto opt_parsed = parse_url(final_url);
+                if (opt_parsed) {
+                    std::string path = opt_parsed->path;
+                    auto dot = path.find_last_of('.');
+                    if (dot != std::string::npos) {
+                        std::string ext = path.substr(dot);
+                        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+                        if (ext != ".html" && ext != ".htm" && !ext.empty()) {
+                            is_html = false;
+                        }
+                        if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif") {
+                            is_image = true;
+                        } else if (ext == ".mp4" || ext == ".mov" || ext == ".m4v") {
+                            is_video = true;
+                        } else if (ext == ".mp3" || ext == ".wav" || ext == ".aac" || ext == ".m4a") {
+                            is_audio = true;
+                        }
+                    }
                 }
             }
-            
-            parse_css(css_content, res.css_classes);
+
+            if (is_image) {
+                res.dom = DomNode();
+                res.dom.tag = "root";
+                DomNode img_node;
+                img_node.tag = "img";
+                img_node.src = final_url;
+                res.dom.children.push_back(img_node);
+                
+                res.fetched_images[final_url] = res.body;
+            } else if (is_video) {
+                res.dom = DomNode();
+                res.dom.tag = "root";
+                DomNode video_node;
+                video_node.tag = "video";
+                video_node.src = final_url;
+                video_node.controls = true;
+                video_node.autoplay = true;
+                video_node.inline_style = "width: 700; height: 500;";
+                video_node.has_inline_style = true;
+                parse_css_properties(video_node.inline_style, video_node.parsed_inline_style);
+                
+                res.dom.children.push_back(video_node);
+                res.fetched_media[final_url] = res.body;
+            } else if (is_audio) {
+                res.dom = DomNode();
+                res.dom.tag = "root";
+                DomNode audio_node;
+                audio_node.tag = "audio";
+                audio_node.src = final_url;
+                audio_node.controls = true;
+                audio_node.autoplay = true;
+                audio_node.inline_style = "width: 450;";
+                audio_node.has_inline_style = true;
+                parse_css_properties(audio_node.inline_style, audio_node.parsed_inline_style);
+                
+                res.dom.children.push_back(audio_node);
+                res.fetched_media[final_url] = res.body;
+            } else if (is_html) {
+                std::string css_content = "";
+                res.dom = parse_html_to_dom(res.body, css_content);
+                
+                std::vector<std::string> stylesheet_hrefs;
+                find_stylesheets_in_dom(res.dom, stylesheet_hrefs);
+                
+                for (const auto& href : stylesheet_hrefs) {
+                    std::string sheet_url = resolve_url(final_url, href);
+                    FetchResult sheet_res = perform_fetch(tab_id, sheet_url, false);
+                    if (sheet_res.success) {
+                        css_content += "\n" + sheet_res.body;
+                    }
+                }
+                
+                parse_css(css_content, res.css_classes);
+                
+                std::vector<std::string> img_srcs;
+                find_images_in_dom(res.dom, img_srcs);
+                for (const auto& src : img_srcs) {
+                    std::string img_url = resolve_url(final_url, src);
+                    FetchResult img_res = perform_fetch(tab_id, img_url, false);
+                    if (img_res.success) {
+                        res.fetched_images[img_url] = img_res.body;
+                    }
+                }
+
+                std::vector<std::string> media_srcs;
+                find_media_in_dom(res.dom, media_srcs);
+                for (const auto& src : media_srcs) {
+                    std::string media_url = resolve_url(final_url, src);
+                    FetchResult media_res = perform_fetch(tab_id, media_url, false);
+                    if (media_res.success) {
+                        res.fetched_media[media_url] = media_res.body;
+                    }
+                }
+            } else {
+                res.dom = DomNode();
+                res.dom.tag = "root";
+                DomNode pre_node;
+                pre_node.tag = "pre";
+                pre_node.text_content = res.body;
+                res.dom.children.push_back(pre_node);
+            }
         }
         
         std::lock_guard<std::mutex> lock(fetch_mutex);

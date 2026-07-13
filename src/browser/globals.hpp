@@ -12,5 +12,7 @@ extern int restored_y;
 extern int restored_w;
 extern int restored_h;
 extern std::mutex fetch_mutex;
+extern ImFont* mono_font;
 
 Tab* find_tab_by_id(int tab_id);
+std::string get_cache_filepath(const std::string& url);

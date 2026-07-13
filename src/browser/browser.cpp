@@ -31,8 +31,43 @@
 #include "parser.hpp"
 #include "fetcher.hpp"
 #include "renderer.hpp"
+#include "media_player.hpp"
+#include <filesystem>
+#include <fstream>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "../thirdparty/stb_image.h"
+
+bool LoadTextureFromMemory(const unsigned char* image_data, int image_size, unsigned int* out_texture, int* out_width, int* out_height) {
+    int image_width = 0;
+    int image_height = 0;
+    unsigned char* data = stbi_load_from_memory(image_data, image_size, &image_width, &image_height, NULL, 4);
+    if (data == NULL) return false;
+
+    GLuint image_texture;
+    glGenTextures(1, &image_texture);
+    glBindTexture(GL_TEXTURE_2D, image_texture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+#if defined(GL_UNPACK_ROW_LENGTH) && !defined(__EMSCRIPTEN__)
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+#endif
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    stbi_image_free(data);
+
+    *out_texture = image_texture;
+    *out_width = image_width;
+    *out_height = image_height;
+
+    return true;
+}
 
 int main() {
+    std::filesystem::create_directories("cache");
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return 1;
@@ -65,9 +100,31 @@ int main() {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
+    const char* cjk_fonts[] = {
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc"
+    };
+    const char* cjk_font_path = nullptr;
+    for (const char* path : cjk_fonts) {
+        if (access(path, F_OK) == 0) {
+            cjk_font_path = path;
+            break;
+        }
+    }
+
+    ImFontConfig merge_cfg;
+    merge_cfg.MergeMode = true;
+    merge_cfg.PixelSnapH = true;
+
     ImFont* font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/Supplemental/Arial.ttf", 16.0f);
     if (font == nullptr) {
-        io.Fonts->AddFontDefault();
+        font = io.Fonts->AddFontDefault();
+    }
+    
+    mono_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/Supplemental/Courier New.ttf", 15.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+    if (mono_font != nullptr && cjk_font_path != nullptr) {
+        io.Fonts->AddFontFromFileTTF(cjk_font_path, 15.0f, &merge_cfg, io.Fonts->GetGlyphRangesJapanese());
     }
 
     ImGui::StyleColorsDark();
@@ -128,7 +185,40 @@ int main() {
                     tab.is_fetching = false;
                     tab.new_page_ready = false;
                     tab.reset_scroll_next_frame = true;
+                    
+                    for (const auto& [url, tex] : tab.page_textures) {
+                        if (tex.id != 0) {
+                            glDeleteTextures(1, &tex.id);
+                        }
+                    }
+                    tab.page_textures.clear();
+
+                    for (auto& [url, player] : tab.active_players) {
+                        delete player;
+                    }
+                    tab.active_players.clear();
+
                     if (tab.active_page.success) {
+                        for (const auto& [url, bytes] : tab.active_page.fetched_media) {
+                            std::string cache_path = get_cache_filepath(url);
+                            std::ofstream outfile(cache_path, std::ios::binary);
+                            if (outfile) {
+                                outfile.write(bytes.data(), bytes.size());
+                            }
+                        }
+                        // Load new textures on the main thread
+                        for (const auto& [url, bytes] : tab.active_page.fetched_images) {
+                            TextureInfo tex;
+                            if (LoadTextureFromMemory(
+                                (const unsigned char*)bytes.data(),
+                                (int)bytes.size(),
+                                &tex.id,
+                                &tex.width,
+                                &tex.height
+                            )) {
+                                tab.page_textures[url] = tex;
+                            }
+                        }
                         tab.status_text = "Success (" + std::to_string(tab.active_page.status_code) + " " + tab.active_page.status_text + ")";
                         tab.page_dom = std::move(tab.active_page.dom);
                         tab.css_classes = std::move(tab.active_page.css_classes);
@@ -290,7 +380,6 @@ int main() {
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar);
         
-        // ----------------- TAB BAR -----------------
         float tab_height = 34.0f;
         float max_tab_width = 180.0f;
         float min_tab_width = 36.0f;
@@ -489,6 +578,19 @@ int main() {
                 close(tabs[tab_to_close].active_socket_fd);
                 tabs[tab_to_close].active_socket_fd = -1;
             }
+            
+            // Delete its textures first!
+            for (const auto& [url, tex] : tabs[tab_to_close].page_textures) {
+                if (tex.id != 0) {
+                    glDeleteTextures(1, &tex.id);
+                }
+            }
+            tabs[tab_to_close].page_textures.clear();
+            
+            for (auto& [url, player] : tabs[tab_to_close].active_players) {
+                delete player;
+            }
+            tabs[tab_to_close].active_players.clear();
             
             tabs.erase(tabs.begin() + tab_to_close);
             if (tabs.empty()) {
@@ -735,6 +837,19 @@ int main() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window);
+    }
+
+    for (auto& tab : tabs) {
+        for (const auto& [url, tex] : tab.page_textures) {
+            if (tex.id != 0) {
+                glDeleteTextures(1, &tex.id);
+            }
+        }
+        tab.page_textures.clear();
+        for (auto& [url, player] : tab.active_players) {
+            delete player;
+        }
+        tab.active_players.clear();
     }
 
     ImGui_ImplOpenGL3_Shutdown();

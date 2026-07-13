@@ -42,6 +42,7 @@ struct DomNode {
     std::string id;
     std::string onclick;
     std::string href;
+    std::string src;
     std::string text_content;
     std::string type;
     std::string value;
@@ -50,6 +51,12 @@ struct DomNode {
     bool has_inline_style = false;
     CssStyle parsed_inline_style;
     std::vector<DomNode> children;
+    
+    // Media attributes
+    bool autoplay = false;
+    bool loop = false;
+    bool controls = false;
+    bool muted = false;
 };
 
 struct FetchResult {
@@ -61,6 +68,14 @@ struct FetchResult {
     std::string error_message;
     DomNode dom;
     std::unordered_map<std::string, CssStyle> css_classes;
+    std::unordered_map<std::string, std::string> fetched_images;
+    std::unordered_map<std::string, std::string> fetched_media;
+};
+
+struct TextureInfo {
+    unsigned int id = 0;
+    int width = 0;
+    int height = 0;
 };
 
 struct Tab {
@@ -84,4 +99,6 @@ struct Tab {
     bool reset_scroll_next_frame = false;
     
     std::string title = "New Tab";
+    std::unordered_map<std::string, TextureInfo> page_textures;
+    std::unordered_map<std::string, class VideoPlayer*> active_players;
 };

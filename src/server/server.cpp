@@ -46,6 +46,8 @@ std::string get_content_type(const std::string& path) {
     if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
     if (ext == ".gif") return "image/gif";
     if (ext == ".txt") return "text/plain";
+    if (ext == ".mov" || ext == ".mp4") return "video/mp4";
+    if (ext == ".mp3") return "audio/mpeg";
     return "application/octet-stream";
 }
 
