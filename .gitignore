@@ -10,6 +10,12 @@ obj/
 *.a
 *.lib
 
+# CMake build directory
+build/
+
+# vcpkg (Windows dependency manager checkout)
+vcpkg/
+
 # ImGui Auto-generated Layout
 imgui.ini
 
