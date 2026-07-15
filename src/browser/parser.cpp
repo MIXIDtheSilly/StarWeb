@@ -323,8 +323,61 @@ static size_t find_ci(const std::string& h, const std::string& needle, size_t fr
     return std::string::npos;
 }
 
+// Splits the attributes out of a tag's inner text, starting at `attr_pos` (just past
+// the tag name). Values may be single-quoted, double-quoted, or bare; a valueless
+// attribute yields an empty value.
+static std::vector<std::pair<std::string, std::string>>
+parse_attributes(const std::string& tag_inner, size_t attr_pos) {
+    std::vector<std::pair<std::string, std::string>> attrs;
+    while (attr_pos < tag_inner.size()) {
+        while (attr_pos < tag_inner.size() && std::isspace(tag_inner[attr_pos])) {
+            attr_pos++;
+        }
+        if (attr_pos >= tag_inner.size()) break;
+
+        size_t name_start = attr_pos;
+        while (attr_pos < tag_inner.size() && tag_inner[attr_pos] != '=' && !std::isspace(tag_inner[attr_pos])) {
+            attr_pos++;
+        }
+        std::string attr_name = tag_inner.substr(name_start, attr_pos - name_start);
+
+        while (attr_pos < tag_inner.size() && std::isspace(tag_inner[attr_pos])) {
+            attr_pos++;
+        }
+
+        std::string attr_val = "";
+        if (attr_pos < tag_inner.size() && tag_inner[attr_pos] == '=') {
+            attr_pos++;
+            while (attr_pos < tag_inner.size() && std::isspace(tag_inner[attr_pos])) {
+                attr_pos++;
+            }
+            if (attr_pos < tag_inner.size()) {
+                if (tag_inner[attr_pos] == '"' || tag_inner[attr_pos] == '\'') {
+                    char quote = tag_inner[attr_pos];
+                    attr_pos++;
+                    size_t val_start = attr_pos;
+                    while (attr_pos < tag_inner.size() && tag_inner[attr_pos] != quote) {
+                        attr_pos++;
+                    }
+                    attr_val = tag_inner.substr(val_start, attr_pos - val_start);
+                    if (attr_pos < tag_inner.size()) attr_pos++;
+                } else {
+                    size_t val_start = attr_pos;
+                    while (attr_pos < tag_inner.size() && !std::isspace(tag_inner[attr_pos])) {
+                        attr_pos++;
+                    }
+                    attr_val = tag_inner.substr(val_start, attr_pos - val_start);
+                }
+            }
+        }
+
+        attrs.emplace_back(std::move(attr_name), std::move(attr_val));
+    }
+    return attrs;
+}
+
 DomNode parse_html_to_dom(const std::string& html, std::string& css_content,
-                          std::vector<std::string>& scripts) {
+                          std::vector<PageScript>& scripts) {
     DomNode root;
     root.tag = "root";
 
@@ -401,15 +454,23 @@ DomNode parse_html_to_dom(const std::string& html, std::string& css_content,
                            [](unsigned char c) { return std::tolower(c); });
 
             if (tag_name == "script") {
+                std::string script_src;
+                for (auto& [name, val] : parse_attributes(tag_inner, tag_name_end)) {
+                    if (name == "src") script_src = val;
+                }
+                std::string raw;
                 if (!self_closing) {
                     size_t close = find_ci(html, "</script>", i);
-                    std::string raw = (close == std::string::npos)
+                    raw = (close == std::string::npos)
                         ? html.substr(i) : html.substr(i, close - i);
                     i = (close == std::string::npos) ? len : close + 9;
-                    bool has_src = tag_inner.find("src") != std::string::npos;
-                    if (!has_src && !trim_spaces(raw).empty()) {
-                        scripts.push_back(std::move(raw));
-                    }
+                }
+                // A src wins over any inline body, which HTML says to ignore. The URL
+                // is left unresolved here; the parser has no base URL to resolve against.
+                if (!script_src.empty()) {
+                    scripts.push_back(PageScript{ std::move(script_src), "" });
+                } else if (!trim_spaces(raw).empty()) {
+                    scripts.push_back(PageScript{ "", std::move(raw) });
                 }
                 continue;
             }
@@ -418,49 +479,7 @@ DomNode parse_html_to_dom(const std::string& html, std::string& css_content,
             child.node_id = next_id++;
             child.tag = tag_name;
 
-            size_t attr_pos = tag_name_end;
-            while (attr_pos < tag_inner.size()) {
-                while (attr_pos < tag_inner.size() && std::isspace(tag_inner[attr_pos])) {
-                    attr_pos++;
-                }
-                if (attr_pos >= tag_inner.size()) break;
-                
-                size_t name_start = attr_pos;
-                while (attr_pos < tag_inner.size() && tag_inner[attr_pos] != '=' && !std::isspace(tag_inner[attr_pos])) {
-                    attr_pos++;
-                }
-                std::string attr_name = tag_inner.substr(name_start, attr_pos - name_start);
-                
-                while (attr_pos < tag_inner.size() && std::isspace(tag_inner[attr_pos])) {
-                    attr_pos++;
-                }
-                
-                std::string attr_val = "";
-                if (attr_pos < tag_inner.size() && tag_inner[attr_pos] == '=') {
-                    attr_pos++;
-                    while (attr_pos < tag_inner.size() && std::isspace(tag_inner[attr_pos])) {
-                        attr_pos++;
-                    }
-                    if (attr_pos < tag_inner.size()) {
-                        if (tag_inner[attr_pos] == '"' || tag_inner[attr_pos] == '\'') {
-                            char quote = tag_inner[attr_pos];
-                            attr_pos++;
-                            size_t val_start = attr_pos;
-                            while (attr_pos < tag_inner.size() && tag_inner[attr_pos] != quote) {
-                                attr_pos++;
-                            }
-                            attr_val = tag_inner.substr(val_start, attr_pos - val_start);
-                            if (attr_pos < tag_inner.size()) attr_pos++;
-                        } else {
-                            size_t val_start = attr_pos;
-                            while (attr_pos < tag_inner.size() && !std::isspace(tag_inner[attr_pos])) {
-                                attr_pos++;
-                            }
-                            attr_val = tag_inner.substr(val_start, attr_pos - val_start);
-                        }
-                    }
-                }
-                
+            for (const auto& [attr_name, attr_val] : parse_attributes(tag_inner, tag_name_end)) {
                 if (attr_name == "class") {
                     child.class_name = attr_val;
                 } else if (attr_name == "onclick") {

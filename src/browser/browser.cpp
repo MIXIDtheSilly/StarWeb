@@ -83,9 +83,12 @@ static void run_page_scripts(Tab& tab) {
         start_async_fetch(tid, url);
     });
     eng->bind_inline_handlers();
-    for (const auto& src : tab.active_page.scripts) {
+    for (const PageScript& script : tab.active_page.scripts) {
+        // An external script that failed to load has no source; the fetcher already
+        // reported why, so skip it rather than reporting an empty chunk again.
+        if (script.source.empty()) continue;
         std::string err;
-        if (!eng->run(src, "page", err)) {
+        if (!eng->run(script.source, script.src.empty() ? "page" : script.src, err)) {
             std::cerr << "[lua " << tid << "] error: " << err << "\n";
         }
     }
@@ -94,6 +97,40 @@ static void run_page_scripts(Tab& tab) {
 void script_dispatch_click(int tab_id, uint64_t node_id) {
     auto it = g_script_engines.find(tab_id);
     if (it != g_script_engines.end() && it->second) it->second->dispatch_click(node_id);
+}
+
+
+static void dispatch_page_keys(GLFWwindow* window) {
+    struct NamedKey { int key; const char* name; };
+    static const NamedKey kNamedKeys[] = {
+        {GLFW_KEY_LEFT,  "ArrowLeft"}, {GLFW_KEY_RIGHT, "ArrowRight"},
+        {GLFW_KEY_UP,    "ArrowUp"},   {GLFW_KEY_DOWN,  "ArrowDown"},
+        {GLFW_KEY_SPACE, " "},         {GLFW_KEY_ENTER, "Enter"},
+        {GLFW_KEY_ESCAPE, "Escape"},
+        {GLFW_KEY_LEFT_SHIFT, "Shift"}, {GLFW_KEY_RIGHT_SHIFT, "Shift"},
+    };
+    static std::unordered_map<int, bool> was_down;  // previous poll, by GLFW key code
+
+    ScriptEngine* eng = nullptr;
+    if (active_tab_idx >= 0 && active_tab_idx < (int)tabs.size()) {
+        auto it = g_script_engines.find(tabs[active_tab_idx].id);
+        if (it != g_script_engines.end()) eng = it->second.get();
+    }
+    const bool typing = ImGui::GetIO().WantTextInput;
+
+    auto poll = [&](int key, const char* name) {
+        bool down = !typing && glfwGetKey(window, key) == GLFW_PRESS;
+        bool& prev = was_down[key];
+        if (down == prev) return;
+        prev = down;
+        if (eng && eng->wants_keys()) eng->dispatch_key(down, name);
+    };
+
+    for (int k = GLFW_KEY_A; k <= GLFW_KEY_Z; k++) {
+        const char name[2] = { (char)('a' + (k - GLFW_KEY_A)), '\0' };
+        poll(k, name);
+    }
+    for (const NamedKey& nk : kNamedKeys) poll(nk.key, nk.name);
 }
 
 const std::vector<CanvasOp>* script_canvas_ops(int tab_id, uint64_t node_id) {
@@ -394,7 +431,7 @@ int main() {
                         tab.status_text = "Error: " + tab.active_page.error_message;
                         std::string error_html = "<h1>Error loading page</h1><p>" + tab.active_page.error_message + "</p>";
                         std::string temp_css = "";
-                        std::vector<std::string> temp_scripts;
+                        std::vector<PageScript> temp_scripts;
                         tab.page_dom = parse_html_to_dom(error_html, temp_css, temp_scripts);
                         g_script_engines.erase(tab.id);
                         tab.css_classes.clear();
@@ -408,6 +445,8 @@ int main() {
                 }
             }
         }
+
+        dispatch_page_keys(window);
 
         for (auto& [id, eng] : g_script_engines)
             if (eng) { eng->poll_timers(); eng->run_raf(); }

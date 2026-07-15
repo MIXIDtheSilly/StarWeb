@@ -8,6 +8,7 @@
 #include <cstring>
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 
 std::string resolve_url(const std::string& base_url, const std::string& relative_url) {
     if (relative_url.empty()) return base_url;
@@ -420,6 +421,25 @@ void start_async_fetch(int tab_id, const std::string& url_str, bool is_history_n
                     FetchResult media_res = perform_fetch(tab_id, media_url, false);
                     if (media_res.success) {
                         res.fetched_media[media_url] = media_res.body;
+                    }
+                }
+
+                // External scripts. Resolved against the page URL and fetched in place,
+                // so the engine still sees one list in document order. perform_fetch
+                // rejects any scheme but moon://, which keeps a page from pulling code
+                // off an arbitrary host.
+                for (PageScript& script : res.scripts) {
+                    if (script.src.empty()) continue;
+                    script.src = resolve_url(final_url, script.src);
+                    FetchResult script_res = perform_fetch(tab_id, script.src, false);
+                    if (script_res.success && script_res.status_code == 200) {
+                        script.source = std::move(script_res.body);
+                    } else {
+                        std::cerr << "[script] failed to load " << script.src << ": "
+                                  << (script_res.success
+                                          ? std::to_string(script_res.status_code) + " " + script_res.status_text
+                                          : script_res.error_message)
+                                  << "\n";
                     }
                 }
             } else {

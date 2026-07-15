@@ -12,5 +12,5 @@ void parse_background(std::string_view value, CssStyle& style);
 void parse_css_properties(const std::string& properties, CssStyle& style);
 void parse_css(const std::string& css_content, std::unordered_map<std::string, CssStyle>& styles);
 DomNode parse_html_to_dom(const std::string& html, std::string& css_content,
-                          std::vector<std::string>& scripts);
+                          std::vector<PageScript>& scripts);
 void apply_style(CssStyle& dest, const CssStyle& src);

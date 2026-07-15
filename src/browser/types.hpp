@@ -94,6 +94,15 @@ struct DomNode {
     bool muted = false;
 };
 
+// A <script> from the page, kept in document order. Inline scripts arrive from the
+// parser with `source` already filled and `src` empty; external ones arrive with only
+// `src` set, and the fetcher resolves it and fills in `source` from the response.
+// An external script whose fetch failed keeps an empty `source` and is not run.
+struct PageScript {
+    std::string src;
+    std::string source;
+};
+
 struct FetchResult {
     bool success = false;
     int status_code = 0;
@@ -105,7 +114,7 @@ struct FetchResult {
     std::unordered_map<std::string, CssStyle> css_classes;
     std::unordered_map<std::string, std::string> fetched_images;
     std::unordered_map<std::string, std::string> fetched_media;
-    std::vector<std::string> scripts;
+    std::vector<PageScript> scripts;
 };
 
 struct TextureInfo {

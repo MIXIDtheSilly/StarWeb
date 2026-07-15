@@ -46,6 +46,10 @@ public:
     void add_click_handler(uint64_t node_id, int ref) { click_handlers_[node_id].push_back(ref); }
     void dispatch_click(uint64_t node_id);
 
+    void add_key_handler(bool down, int ref);
+    void dispatch_key(bool down, const std::string& key);
+    bool wants_keys() const { return !keydown_handlers_.empty() || !keyup_handlers_.empty(); }
+
     void set_nav(NavSink n) { nav_ = std::move(n); }
     void set_url_provider(UrlProvider u) { url_ = std::move(u); }
     void navigate(const std::string& url) { if (nav_) nav_(url); }
@@ -96,6 +100,9 @@ private:
     NavSink     nav_;
     UrlProvider url_;
     std::unordered_map<uint64_t, std::vector<int>> click_handlers_;
+    std::vector<int> keydown_handlers_;
+    std::vector<int> keyup_handlers_;
+    static constexpr size_t kMaxKeyHandlers = 64;
 
     struct Timer {
         int id;

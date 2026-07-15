@@ -160,6 +160,19 @@ static int el_addEventListener(lua_State* L) {
     return 0;
 }
 
+// document.addEventListener(type, fn) — page-wide key events. Called with a dot,
+// like the rest of the document table, so the event name is the first argument.
+static int doc_addEventListener(lua_State* L) {
+    std::string ev = luaL_checkstring(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    if (ev != "keydown" && ev != "keyup") return 0;
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    if (ScriptEngine* eng = engine_from(L)) eng->add_key_handler(ev == "keydown", ref);
+    else luaL_unref(L, LUA_REGISTRYINDEX, ref);
+    return 0;
+}
+
 static int el_getContext(lua_State* L);
 
 static int element_index(lua_State* L) {
@@ -608,6 +621,7 @@ int ScriptEngine::p_install(lua_State* L) {
     lua_pushcfunction(L, &doc_getElementsByClassName); lua_setfield(L, -2, "getElementsByClassName");
     lua_pushcfunction(L, &doc_getElementsByTagName);   lua_setfield(L, -2, "getElementsByTagName");
     lua_pushcfunction(L, &doc_querySelector);          lua_setfield(L, -2, "querySelector");
+    lua_pushcfunction(L, &doc_addEventListener);       lua_setfield(L, -2, "addEventListener");
     lua_setglobal(L, "document");
 
     lua_pushcfunction(L, &l_setTimeout);  lua_setglobal(L, "setTimeout");
@@ -734,6 +748,33 @@ void ScriptEngine::dispatch_click(uint64_t node_id) {
         if (lua_pcall(L_, 1, 0, 0) != LUA_OK) {
             const char* msg = lua_tostring(L_, -1);
             log(std::string("[click] ") + (msg ? msg : "?"));
+            lua_pop(L_, 1);
+        }
+    }
+}
+
+void ScriptEngine::add_key_handler(bool down, int ref) {
+    auto& list = down ? keydown_handlers_ : keyup_handlers_;
+    if (!L_ || list.size() >= kMaxKeyHandlers) {
+        if (L_) luaL_unref(L_, LUA_REGISTRYINDEX, ref);
+        return;
+    }
+    list.push_back(ref);
+}
+
+void ScriptEngine::dispatch_key(bool down, const std::string& key) {
+    if (!L_) return;
+    const auto& list = down ? keydown_handlers_ : keyup_handlers_;
+    if (list.empty()) return;
+    deadline_ = std::chrono::steady_clock::now() + time_budget_;
+    for (int ref : list) {
+        lua_rawgeti(L_, LUA_REGISTRYINDEX, ref);
+        lua_newtable(L_);
+        lua_pushlstring(L_, key.data(), key.size());
+        lua_setfield(L_, -2, "key");
+        if (lua_pcall(L_, 1, 0, 0) != LUA_OK) {
+            const char* msg = lua_tostring(L_, -1);
+            log(std::string(down ? "[keydown] " : "[keyup] ") + (msg ? msg : "?"));
             lua_pop(L_, 1);
         }
     }
