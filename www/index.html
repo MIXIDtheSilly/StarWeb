@@ -2,117 +2,108 @@
 <html>
 
 <head>
-    <meta charset="UTF-8">
-    <title>Starmap Homepage</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<title>Nebula</title>
+<style>
+body { background: #000000; margin: 0; padding: 0; }
+
+.stage {
+  display: flex; flex-direction: row;
+  justify-content: space-between; align-items: center;
+  height: 100vh;
+}
+.side { width: 28vw; height: 100vh; }
+
+/* 90vh inside the centred stage parks the column in the upper half. */
+.auth {
+  display: flex; flex-direction: column; align-items: center;
+  width: 31vw; height: 90vh;
+}
+
+/* Wider than .auth on purpose: it overhangs the form on both sides. Both axes
+   are vw so the 2.83:1 banner keeps its aspect on any window shape. */
+.logo { width: 58vw; height: 20.5vw; margin-bottom: 6; }
+
+.lbl {
+  color: #8f8a9e; font-family: Inter SemiBold; font-size: 15px;
+  width: 31vw; margin-top: 0; margin-bottom: 8;
+}
+.fld {
+  background: #000000; color: #ffffff;
+  border-width: 1; border-color: #7c5cff; border-radius: 8;
+  padding-left: 14; padding-top: 11;
+  width: 31vw; height: 38; margin-bottom: 22;
+}
+.cta {
+  background: #8b5cf6; color: #ffffff; font-family: Inter SemiBold;
+  border-width: 1; border-color: #8b5cf6; border-radius: 8;
+  width: 31vw; height: 44; margin-top: 30;
+}
+</style>
 </head>
 
 <body>
-    <div class="container">
-        <div class="header">
-            <h1 class="title">Welcome to StarWeb</h1>
-            <p class="subtitle"> testing testing stardance bla bla yey</p>
-        </div>
 
-        <h2>About the Project</h2>
-        <p class="desc">
-            StarWeb is my attempt at building an internet of my own. A custom protocol, a custom URL scheme, and a
-            client and server that communicate using them.I put together STWP, my own protocol with request and response
-            parsing, structured similarly to HTTP but built from scratch.
-        </p>
+<div class="stage">
+  <canvas class="side" id="lft"></canvas>
 
-        <h2>form test</h2>
-        <div>
-            <p class="label">login name</p>
-            <input type="text" class="input-field" placeholder="Enter your name..." id="name-input">
+  <div class="auth">
+    <img class="logo" src="banner.png">
+    <p class="lbl">Username</p>
+    <input type="text" class="fld" id="u">
+    <p class="lbl">Password</p>
+    <input type="password" class="fld" id="p">
+    <button class="cta" id="go">Log In</button>
+  </div>
 
-            <p class="label">login password</p>
-            <textarea class="textarea-field" placeholder="Type your password here..." id="msg-text"></textarea>
+  <canvas class="side" id="rgt"></canvas>
+</div>
 
-            <button class="btn-primary" onclick="alert('Thank you for your feedback!')">Login</button>
-        </div>
+<script src="nebula_shapes.lua"></script>
+<script src="nebula_art.lua"></script>
+<script>
+-- Every size below is a multiple of S. sqrt(W*H) grows with both axes, so a
+-- shape keeps its footprint whichever edge the window is dragged from; sizing
+-- off W alone made everything track the width and ignore the height.
+local function unit(W, H) return math.sqrt(W * H) end
 
-        <h2>Text Support Test</h2>
-        <div>
-            <p class="desc">
-                Click below to view a non-HTML plain text document:
-            </p>
-            <p><a href="/test.txt">View test.txt (Plain Text File)</a></p>
-        </div>
+-- makeLine's ox/oy are the polyline's own origin, so shapes always grew away
+-- from the top-left. anchor() pins a corner of the shape's bounding box
+-- instead: ax/ay of 0 is left/top, 1 is right/bottom.
+local function anchor(L, scale, ax, ay, x, y)
+    local lox, hix = L.x[1], L.x[1]
+    local loy, hiy = L.y[1], L.y[1]
+    for i = 2, #L.x do
+        if L.x[i] < lox then lox = L.x[i] elseif L.x[i] > hix then hix = L.x[i] end
+        if L.y[i] < loy then loy = L.y[i] elseif L.y[i] > hiy then hiy = L.y[i] end
+    end
+    return x - (lox + (hix - lox) * ax) * scale,
+           y - (loy + (hiy - loy) * ay) * scale
+end
 
-        <h2>Image Support Test</h2>
-        <div>
-            <p class="desc">
-                Below is an embedded image (HTML <code>&lt;img&gt;</code> tag):
-            </p>
-            <p><img src="/cat.jpg" style="width: 200px; height: 128;"></p>
-            <p class="desc">
-                Click below to view the image as a standalone file:
-            </p>
-            <p><a href="/cat.jpg">View cat.jpg (Image File)</a></p>
-        </div>
+makeScene("lft", function(W, H)
+    local S = unit(W, H)
+    -- Snake hugs the left edge, entering just under the top.
+    local ox, oy = anchor(LINE_L, S * 1.01, 0, 0, -S * 0.354, S * 0.057)
+    -- Cog hugs the bottom-left. The radius is capped at the distance to the
+    -- right edge because the canvas clips its own drawing at W.
+    local cx = math.min(S * 0.19, W * 0.30)
+    return {
+        makeLine(LINE_L, ox, oy, S * 1.01, 0.4),
+        makeCog(cx, H - S * 0.158, math.min(S * 0.392, W - cx), 0.00022, 0.0, -2.2),
+    }
+end)
 
-        <h2>Video and Audio Support Test</h2>
-        <div>
-            <p class="desc">
-                Below is an embedded video with controls and autoplay:
-            </p>
-            <p><video src="isaac.mov" controls style="width: 500; height: 1000;"></video></p>
+makeScene("rgt", function(W, H)
+    local S = unit(W, H)
+    -- Line hugs the right edge and runs off the bottom-right corner.
+    local ox, oy = anchor(LINE_R, S * 1.11, 1, 1, W + S * 0.138, H + S * 0.035)
+    return {
+        makeCog(W - S * 0.155, S * 0.127, S * 0.373, -0.00026, 1.7, -0.9),
+        makeLine(LINE_R, ox, oy, S * 1.11, 2.6),
+    }
+end)
+</script>
 
-            <p class="desc">
-                Below is an embedded audio player with controls:
-            </p>
-            <p><audio src="Sorry_icannot.mp3" controls style="width: 300;"></audio></p>
-
-            <p class="desc">
-                Click below to view the video file directly (standalone media player):
-            </p>
-            <p><a href="/isaac.mov">View isaac.mov (Video File)</a></p>
-        </div>
-
-        <h2>Rich Text Formatting Test</h2>
-        <div>
-            <p class="desc">
-                This browser now renders <b>bold text</b>, <i>italic text</i>,
-                <u>underlined text</u>, <s>strikethrough</s>, <mark>highlighted text</mark>,
-                and inline <code>code snippets</code>. You can press <kbd>Ctrl</kbd> +
-                <kbd>C</kbd> to copy. Water is H<sub>2</sub>O and E = mc<sup>2</sup>.
-                Here is some <small>small print</small> and a
-                <strong>strong point</strong> worth <em>emphasizing</em>.
-            </p>
-            <blockquote>
-                "The best way to predict the future is to invent it."
-            </blockquote>
-        </div>
-
-        <h2>Table Support Test</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Feature</th>
-                    <th>Tag</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Bold</td>
-                    <td>&lt;b&gt;</td>
-                    <td>Supported</td>
-                </tr>
-                <tr>
-                    <td>Blockquote</td>
-                    <td>&lt;blockquote&gt;</td>
-                    <td>Supported</td>
-                </tr>
-                <tr>
-                    <td>Tables</td>
-                    <td>&lt;table&gt;</td>
-                    <td>Supported</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
 </body>
-
 </html>

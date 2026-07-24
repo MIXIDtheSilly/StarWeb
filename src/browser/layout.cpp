@@ -102,7 +102,10 @@ static ImVec2 measure_intrinsic(const DomNode& node, const CssStyle& merged, flo
     }
     if (tag == "button") {
         std::string t = collapse_whitespace(node.text_content);
+        ImFont* fam = font_for_family(merged.font_family);
+        if (fam) ImGui::PushFont(fam);
         ImVec2 ts = ImGui::CalcTextSize(t.c_str());
+        if (fam) ImGui::PopFont();
         return ImVec2(merged.width > 0.0f ? merged.width : ts.x + 36.0f,
                       merged.height > 0.0f ? merged.height : ts.y + 12.0f);
     }
@@ -128,13 +131,14 @@ static ImVec2 measure_intrinsic(const DomNode& node, const CssStyle& merged, flo
         float scale = merged.font_size * header_scale(tag);
         if (tag == "small" || tag == "sub" || tag == "sup") scale = merged.font_size * 0.8f;
         bool mono = (tag == "code" || tag == "kbd" || tag == "samp" || tag == "var") && mono_font != nullptr;
-        if (mono) ImGui::PushFont(mono_font);
+        ImFont* fam = mono ? mono_font : font_for_family(merged.font_family);
+        if (fam) ImGui::PushFont(fam);
         ImGui::SetWindowFontScale(scale);
         float box_w = merged.width > 0.0f ? merged.width : avail_w;
         float wrap = std::max(1.0f, box_w - pad_x);
         ImVec2 ts = ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap);
         ImGui::SetWindowFontScale(1.0f);
-        if (mono) ImGui::PopFont();
+        if (fam) ImGui::PopFont();
         float w = merged.width > 0.0f ? merged.width : ts.x + pad_x;
         float h = merged.height > 0.0f ? merged.height : ts.y + pad_y;
         if (tag == "p" || tag[0] == 'h') h += ImGui::GetTextLineHeightWithSpacing() * 0.3f;

@@ -33,7 +33,7 @@ def test_login_page_renders(fake_db):
     res = get("/")
     assert res.status_code == 200
     assert res.headers["Content-Type"].startswith("text/html")
-    assert "Sign in" in res.text and "/panel.css" in res.text
+    assert "Log In" in res.text and "/panel.css" in res.text
 
 
 def test_stylesheet_is_served(fake_db):
@@ -55,6 +55,19 @@ def test_register_rejects_a_short_password(fake_db):
 def test_login_with_the_wrong_password(session):
     res = post("/api/login", {"username": "tester", "password": "nope"})
     assert res.status_code == 401
+
+
+def test_access_creates_an_unknown_account(fake_db):
+    res = post("/api/access", {"username": "newbie", "password": "hunter2hunter2"})
+    assert res.status_code == 200 and res.json()["token"]
+    # A second call is now a plain login, not a re-registration.
+    again = post("/api/access", {"username": "newbie", "password": "hunter2hunter2"})
+    assert again.status_code == 200 and again.json()["token"]
+
+
+def test_access_rejects_wrong_password_for_existing_account(session):
+    res = post("/api/access", {"username": "tester", "password": "nope"})
+    assert res.status_code == 401 and "error" in res.json()
 
 
 def test_panel_needs_a_session(fake_db):

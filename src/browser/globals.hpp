@@ -16,6 +16,12 @@ extern int restored_h;
 extern std::mutex fetch_mutex;
 extern ImFont* mono_font;
 
+// Extra faces a page can select with `font-family`. Names are matched loosely
+// (case, spaces and hyphens are ignored) and a comma list is tried left to
+// right, so an unknown family just falls through to the default UI font.
+void register_page_font(const std::string& family, ImFont* font);
+ImFont* font_for_family(const std::string& family);
+
 // Size of the page viewport for the frame being drawn, which is what `vw` and
 // `vh` resolve against. Set once per frame before the DOM is walked.
 extern float page_viewport_w;

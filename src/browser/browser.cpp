@@ -323,6 +323,18 @@ int main() {
         io.Fonts->AddFontFromFileTTF(cjk_font_path, 15.0f, &merge_cfg, io.Fonts->GetGlyphRangesJapanese());
     }
 
+    // Bundled faces a page can ask for by name. Added after the CJK merge above,
+    // which folds itself into whichever font was registered last.
+    const std::pair<const char*, const char*> bundled_fonts[] = {
+        { "Inter SemiBold", "Inter-SemiBold.ttf" },
+    };
+    for (const auto& [family, file] : bundled_fonts) {
+        std::filesystem::path path = app_dir() / "fonts" / file;
+        if (std::filesystem::exists(path)) {
+            register_page_font(family, io.Fonts->AddFontFromFileTTF(path.string().c_str(), 16.0f));
+        }
+    }
+
     ImGui::StyleColorsDark();
 
     auto& style = ImGui::GetStyle();
@@ -1064,7 +1076,12 @@ int main() {
 
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_InputTextCursor, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+        // No padding of its own: a full-bleed element needs to reach the edge,
+        // and the page insets itself via body margin. Popped right after
+        // Begin reads it.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::BeginChild("RenderViewport", ImVec2(0, 0), false, 0);
+        ImGui::PopStyleVar();
         if (active_tab.reset_scroll_next_frame) {
             ImGui::SetScrollY(0.0f);
             active_tab.reset_scroll_next_frame = false;
@@ -1103,21 +1120,34 @@ int main() {
         default_style.color = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
         default_style.has_color = true;
         bool default_inline_flow = false;
+        // Vertical gaps are the page's to set via margins; ImGui's own
+        // ItemSpacing would stack 4px per nesting level on top, which is what
+        // kept a 100vh box from reaching the bottom. X spacing stays —
+        // SameLine passes its own gap explicitly.
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+                            ImVec2(ImGui::GetStyle().ItemSpacing.x, 0.0f));
         render_node(active_tab.page_dom, default_style, default_inline_flow, active_tab);
+        ImGui::PopStyleVar();
 
         float vp_h = ImGui::GetWindowHeight();
         if (vp_h != active_tab.vp_last_h) {
             active_tab.vp_slack = 0.0f;
             active_tab.vp_last_h = vp_h;
         } else if (active_tab.vp_fit_used) {
-            float grow = ImGui::GetScrollMaxY();
-            active_tab.vp_slack += grow;
+            // What a 100vh box costs beyond its own height: wrappers around it,
+            // plus whatever trails after. Measured directly rather than
+            // accumulated from GetScrollMaxY, which only ever grew and settled
+            // short of the true cost.
+            float overhead = ImGui::GetCursorPosY() - page_viewport_h;
+            if (overhead < 0.0f) overhead = 0.0f;
             // A page whose other content genuinely overflows would otherwise
-            // feed this forever and starve the vh box down to nothing.
+            // starve the vh box down to nothing.
             float cap = vp_h * 0.5f;
-            if (active_tab.vp_slack > cap) active_tab.vp_slack = cap;
-            // Slack converges over successive frames; keep drawing until it does.
-            if (grow > 0.0f) settle_frames = kSettleFrames;
+            if (overhead > cap) overhead = cap;
+            if (std::abs(overhead - active_tab.vp_slack) > 0.5f) {
+                active_tab.vp_slack = overhead;
+                settle_frames = kSettleFrames;
+            }
         }
         active_tab.vp_fit_used = false;
 

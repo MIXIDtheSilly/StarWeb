@@ -70,6 +70,19 @@ def login(username: str, password: str) -> str:
     return token
 
 
+def login_or_register(username: str, password: str) -> str:
+    """Log in, creating the account first if the username is unknown.
+
+    Only a genuinely unregistered username is auto-created: an existing account
+    still needs the right password, so this never leaks a taken name past the
+    same "wrong username or password" that a bare login gives.
+    """
+    name = (username or "").strip().lower()
+    if db().users.find_one({"username": name}) is None:
+        return register(username, password)
+    return login(username, password)
+
+
 def logout(token: str) -> None:
     if token:
         db().sessions.delete_one({"token_hash": _token_hash(token)})

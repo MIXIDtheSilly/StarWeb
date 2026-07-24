@@ -20,13 +20,19 @@ in attribute values, so `href="?a=1&amp;b=2"` arrived with `b` lost — and the
 parser was fixed on 2026-07-22, but the shape is the nicer one, so it stayed.
 """
 
-from . import config
+from pathlib import Path
+
+from . import config, shapes
+
+# The halftone renderer the login page runs per frame. Kept as Lua on disk
+# rather than a string in here so it stays readable and editable on its own.
+ART = (Path(__file__).resolve().parent / "nebula_art.lua").read_text()
 
 ACCENT = "#ba8cf5"
 
 BRAND = "Starweb DNS"
 
-# A near-black panel: #0a0a0c page, #121216 for the masthead, cards and tiles,
+# A near-black panel: #000000 page, #121216 for the masthead, cards and tiles,
 # #08080a inside fields, and #ffffff body text, with the purple kept for links,
 # headings and primary buttons. This no longer tracks src/browser/theme.hpp,
 # which is still on the lighter greys (#1e1e1e viewport, #282828 toolbar) — the
@@ -40,14 +46,16 @@ BRAND = "Starweb DNS"
 # Kept free of /* comments */: the renderer splits rules on braces, so a comment
 # is swallowed into the next selector and silently kills that rule.
 #
-# `.stage` centres sign-in on both axes, `justify-content` across and
-# `align-items` down a 100vh box, since there is no `margin: auto`. A fixed
-# width only reaches a card through a flex parent, which is the other reason
-# sign-in is staged. `.c-*` and `.r*` share column widths so the record list
+# `.stage` uses `justify-content: space-between` rather than `center` so the
+# two `.side` canvases sit flush against the viewport edges; since both are
+# the same width, `.auth` still lands centred between them. `align-items`
+# centres it vertically down a 100vh box, since there is no `margin: auto`.
+# A fixed width only reaches a card through a flex parent, which is the other
+# reason sign-in is staged. `.c-*` and `.r*` share column widths so the record list
 # lines up with the add-record form. `text-align` is sticky once inherited, so
 # it sits on leaf paragraphs, never on a container.
 CSS = """
-body { background: #0a0a0c; color: #ffffff; margin: 0; padding: 0; }
+body { background: #000000; color: #ffffff; margin: 0; padding: 0; }
 
 h1 { color: #ba8cf5; font-size: 26px; margin-bottom: 4; }
 h2 { color: #ffffff; font-size: 17px; margin-top: 0; margin-bottom: 12; }
@@ -72,28 +80,35 @@ li { color: #d4d4dc; font-size: 14px; }
 
 .stage {
   display: flex; flex-direction: row;
-  justify-content: center; align-items: center;
+  justify-content: space-between; align-items: center;
   height: 100vh;
 }
-.auth { width: 460; }
-.hbrand { color: #ba8cf5; font-size: 30px; text-align: center; }
-.htag { color: #8b8b96; font-size: 14px; text-align: center;
-        margin-top: 10; margin-bottom: 22; }
-.note { color: #8b8b96; font-size: 13px; text-align: center; margin-top: 14; }
-.in-auth {
-  background: #08080a; color: #ffffff;
-  border-width: 1; border-color: #2e2e37; border-radius: 5;
-  padding: 7; width: 420; margin-bottom: 4;
+.side { width: 28vw; height: 100vh; }
+
+/* 90vh inside the centred stage parks the column in the upper half. */
+.auth {
+  display: flex; flex-direction: column; align-items: center;
+  width: 31vw; height: 90vh;
 }
-.btn-auth {
-  background: #8b5cf6; color: #ffffff;
-  border-width: 1; border-color: #8b5cf6; border-radius: 6;
-  display: block; width: 420; height: 34; margin-top: 14;
+
+/* Wider than .auth on purpose: it overhangs the form on both sides. Both axes
+   are vw so the 2.83:1 banner keeps its aspect on any window shape. */
+.logo { width: 58vw; height: 20.5vw; margin-bottom: 6; }
+
+.lbl {
+  color: #8f8a9e; font-family: Inter SemiBold; font-size: 15px;
+  width: 31vw; margin-top: 0; margin-bottom: 8;
 }
-.btn-auth2 {
-  background: #17171c; color: #ffffff;
-  border-width: 1; border-color: #2e2e37; border-radius: 6;
-  display: block; width: 420; height: 34; margin-top: 8;
+.fld {
+  background: #000000; color: #ffffff;
+  border-width: 1; border-color: #7c5cff; border-radius: 8;
+  padding-left: 14; padding-top: 11;
+  width: 31vw; height: 38; margin-bottom: 22;
+}
+.cta {
+  background: #8b5cf6; color: #ffffff; font-family: Inter SemiBold;
+  border-width: 1; border-color: #8b5cf6; border-radius: 8;
+  width: 31vw; height: 44; margin-top: 30;
 }
 
 .tiles { display: flex; flex-direction: row; gap: 12; margin-bottom: 20; }
@@ -280,54 +295,93 @@ def tile(number, label: str) -> str:
             f'<p class="tlab">{esc(label)}</p></div>')
 
 
+# The decoration is drawn, not laid out: the renderer has no absolute
+# positioning, so the artwork lives in two full-height canvases flanking the
+# form, and each shape is placed to bleed off its own canvas edge.
+SCENE = """
+-- Every size below is a multiple of S. sqrt(W*H) grows with both axes, so a
+-- shape keeps its footprint whichever edge the window is dragged from; sizing
+-- off W alone made everything track the width and ignore the height.
+local function unit(W, H) return math.sqrt(W * H) end
+
+-- makeLine's ox/oy are the polyline's own origin, so shapes always grew away
+-- from the top-left. anchor() pins a corner of the shape's bounding box
+-- instead: ax/ay of 0 is left/top, 1 is right/bottom.
+local function anchor(L, scale, ax, ay, x, y)
+    local lox, hix = L.x[1], L.x[1]
+    local loy, hiy = L.y[1], L.y[1]
+    for i = 2, #L.x do
+        if L.x[i] < lox then lox = L.x[i] elseif L.x[i] > hix then hix = L.x[i] end
+        if L.y[i] < loy then loy = L.y[i] elseif L.y[i] > hiy then hiy = L.y[i] end
+    end
+    return x - (lox + (hix - lox) * ax) * scale,
+           y - (loy + (hiy - loy) * ay) * scale
+end
+
+makeScene("lft", function(W, H)
+    local S = unit(W, H)
+    -- Snake hugs the left edge, entering just under the top.
+    local ox, oy = anchor(LINE_L, S * 1.01, 0, 0, -S * 0.354, S * 0.057)
+    -- Cog hugs the bottom-left. The radius is capped at the distance to the
+    -- right edge because the canvas clips its own drawing at W.
+    local cx = math.min(S * 0.19, W * 0.30)
+    return {
+        makeLine(LINE_L, ox, oy, S * 1.01, 0.4),
+        makeCog(cx, H - S * 0.158, math.min(S * 0.392, W - cx), 0.00022, 0.0, -2.2),
+    }
+end)
+
+makeScene("rgt", function(W, H)
+    local S = unit(W, H)
+    -- Line hugs the right edge and runs off the bottom-right corner.
+    local ox, oy = anchor(LINE_R, S * 1.11, 1, 1, W + S * 0.138, H + S * 0.035)
+    return {
+        makeCog(W - S * 0.155, S * 0.127, S * 0.373, -0.00026, 1.7, -0.9),
+        makeLine(LINE_R, ox, oy, S * 1.11, 2.6),
+    }
+end)
+"""
+
+
 def login_page() -> str:
-    body = f"""
+    # Markup mirrors www/index.html one for one: the two flanking canvases, a
+    # banner, the two labelled fields and a single "Log In" button. The only
+    # change is the button carries the login wiring index.html never had.
+    body = """
 <div class="stage">
-<div class="auth">
+  <canvas class="side" id="lft"></canvas>
 
-  <p class="hbrand">{BRAND}</p>
-  <p class="htag">Name registry and certificate authority for .{config.ZONE}</p>
-
-  <div class="card">
-    <h2>Sign in</h2>
-    <p class="label">Username</p>
-    <input type="text" class="in-auth" id="u" placeholder="yourname">
-    <p class="label">Password</p>
-    <input type="password" class="in-auth" id="p" placeholder="at least 8 characters">
-    <div>
-      <button class="btn-auth" id="signin">Sign in</button>
-      <button class="btn-auth2" id="signup">Create account</button>
-    </div>
-    <p class="note" id="msg">New here? Pick a name and a password and the
-    account is created on the spot.</p>
+  <div class="auth">
+    <img class="logo" src="/banner.png">
+    <p class="lbl">Username</p>
+    <input type="text" class="fld" id="u">
+    <p class="lbl">Password</p>
+    <input type="password" class="fld" id="p">
+    <button class="cta" id="go">Log In</button>
   </div>
 
-</div>
+  <canvas class="side" id="rgt"></canvas>
 </div>"""
-    script = """
-local msg = document.getElementById("msg")
+    # index.html has no message element, so feedback rides on the button label:
+    # it shows progress and any error there and restores "Log In" so a second
+    # try is possible. /api/access logs in, or creates the account if the
+    # username is new, then lands on the panel.
+    script = shapes.lua_shapes() + ART + SCENE + """
+local go = document.getElementById("go")
 
-local function say(text, cls)
-    msg.textContent = text
-    msg.style.color = cls or "#8b8b96"
-end
-
-local function submit(path)
+go:addEventListener("click", function()
     local u = document.getElementById("u").value
     local p = document.getElementById("p").value
-    if u == "" or p == "" then return say("Fill in both fields.", "#f87171") end
-    say("Working...")
-    fetch(path, { method = "POST", json = { username = u, password = p } },
+    if u == "" or p == "" then go.textContent = "Fill in both fields"; return end
+    go.textContent = "Working..."
+    fetch("/api/access", { method = "POST", json = { username = u, password = p } },
         function(err, res)
-            if err then return say(err, "#f87171") end
+            if err then go.textContent = err; return end
             local data = res:json()
-            if not res.ok then return say(data.error or "Failed.", "#f87171") end
+            if not res.ok then go.textContent = data.error or "Log In"; return end
             location.assign("/panel?t=" .. data.token)
         end)
-end
-
-document.getElementById("signin"):addEventListener("click", function() submit("/api/login") end)
-document.getElementById("signup"):addEventListener("click", function() submit("/api/register") end)
+end)
 """
     return page(BRAND, body, script)
 

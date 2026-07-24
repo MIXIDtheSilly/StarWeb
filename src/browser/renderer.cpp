@@ -827,6 +827,7 @@ CssStyle merge_node_style(const DomNode& node, const CssStyle& parent_style, Tab
         merged.has_color = true;
     }
     merged.font_size = parent_style.font_size;
+    merged.font_family = parent_style.font_family;
     merged.text_align = parent_style.text_align;
     auto tag_it = tab.css_classes.find(node.tag);
     if (tag_it != tab.css_classes.end()) {
@@ -846,9 +847,16 @@ CssStyle merge_node_style(const DomNode& node, const CssStyle& parent_style, Tab
     if (merged.width_vw > -1.0f && page_viewport_w > 0.0f) {
         merged.width = merged.width_vw * 0.01f * page_viewport_w;
     }
+    if (merged.width_vh > -1.0f && page_viewport_h > 0.0f) {
+        merged.width = merged.width_vh * 0.01f * page_viewport_h;
+        tab.vp_fit_used = true;  // opt into the slack convergence, as canvas does
+    }
     if (merged.height_vh > -1.0f && page_viewport_h > 0.0f) {
         merged.height = merged.height_vh * 0.01f * page_viewport_h;
-        tab.vp_fit_used = true;  // opt into the slack convergence, as canvas does
+        tab.vp_fit_used = true;
+    }
+    if (merged.height_vw > -1.0f && page_viewport_w > 0.0f) {
+        merged.height = merged.height_vw * 0.01f * page_viewport_w;
     }
     return merged;
 }
@@ -929,6 +937,11 @@ void render_node(DomNode& node, const CssStyle& parent_style, bool& is_inline_fl
     if (base_font_scale != 1.0f) {
         ImGui::SetWindowFontScale(base_font_scale);
     }
+
+    // Pushed around the whole element so its text, widget labels and any inline
+    // children all pick the face up; a nested code tag can still push mono over it.
+    ImFont* family_font = font_for_family(merged.font_family);
+    if (family_font != nullptr) ImGui::PushFont(family_font);
 
     if (draw_bg) {
         if (!is_inline_flow && merged.margin_top > 0.0f) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + merged.margin_top);
@@ -2009,6 +2022,8 @@ void render_node(DomNode& node, const CssStyle& parent_style, bool& is_inline_fl
         // sibling can chain onto it with SameLine; a trailing Dummy would break that.
         if (!is_inline) ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
+
+    if (family_font != nullptr) ImGui::PopFont();
 
     if (base_font_scale != 1.0f) {
         ImGui::SetWindowFontScale(1.0f);

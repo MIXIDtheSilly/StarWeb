@@ -32,15 +32,19 @@ struct CssStyle {
     float height = -1.0f;
     // Viewport-relative width/height, as a percentage. Kept apart from the pixel
     // fields because the viewport is only known at render time; merge_node_style
-    // folds them into width/height so nothing downstream has to care.
+    // folds them into width/height so nothing downstream has to care. Either
+    // property takes either axis, which is how a box locks its aspect ratio.
     float width_vw = -1.0f;
+    float width_vh = -1.0f;
     float height_vh = -1.0f;
+    float height_vw = -1.0f;
 
     float border_width = 0.0f;
     ImVec4 border_color = ImVec4(0, 0, 0, 0);
     bool has_border_color = false;
     
     float font_size = 1.0f;
+    std::string font_family = "";
     std::string display = "";
 
     // flexbox; empty string / -1 means unset

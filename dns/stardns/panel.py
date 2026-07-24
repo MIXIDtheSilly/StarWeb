@@ -3,9 +3,11 @@ import json
 
 from starweb import App, Response
 
-from . import auth, ca, config, ui, zones
+from . import auth, ca, config, shapes, ui, zones
 from .db import db
 from .errors import PanelError
+
+BANNER = (shapes.ASSETS / "banner.png").read_bytes()
 
 STATUS_TEXT = {
     200: "OK", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
@@ -46,6 +48,12 @@ def _body(req) -> dict:
 def stylesheet(req):
     return Response(200, body=ui.CSS.encode(),
                     headers={"Content-Type": "text/css; charset=utf-8"})
+
+
+@app.route("/banner.png")
+def banner(req):
+    return Response(200, body=BANNER,
+                    headers={"Content-Type": "image/png"})
 
 
 @app.route("/")
@@ -118,6 +126,17 @@ def api_login(req):
     try:
         payload = _body(req)
         token = auth.login(payload.get("username", ""), payload.get("password", ""))
+    except PanelError as e:
+        return _fail(e)
+    return _json({"token": token})
+
+
+@app.route("/api/access", methods=["POST"])
+def api_access(req):
+    try:
+        payload = _body(req)
+        token = auth.login_or_register(payload.get("username", ""),
+                                       payload.get("password", ""))
     except PanelError as e:
         return _fail(e)
     return _json({"token": token})

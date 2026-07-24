@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <unordered_map>
 #include <system_error>
 #include <vector>
 #ifndef _WIN32
@@ -28,6 +29,38 @@ std::mutex fetch_mutex;
 ImFont* mono_font = nullptr;
 float page_viewport_w = 0.0f;
 float page_viewport_h = 0.0f;
+
+static std::unordered_map<std::string, ImFont*> page_fonts;
+
+// "Inter SemiBold", "inter-semibold" and "'Inter  SemiBold'" all key the same.
+static std::string normalise_family(const std::string& s) {
+    std::string out;
+    bool gap = false;
+    for (char c : s) {
+        if (c == '"' || c == '\'') continue;
+        if (std::isspace((unsigned char)c) || c == '-' || c == '_') { gap = !out.empty(); continue; }
+        if (gap) { out += ' '; gap = false; }
+        out += (char)std::tolower((unsigned char)c);
+    }
+    return out;
+}
+
+void register_page_font(const std::string& family, ImFont* font) {
+    if (font != nullptr) page_fonts[normalise_family(family)] = font;
+}
+
+ImFont* font_for_family(const std::string& family) {
+    size_t start = 0;
+    while (start <= family.size()) {
+        size_t comma = family.find(',', start);
+        auto it = page_fonts.find(normalise_family(
+            family.substr(start, comma == std::string::npos ? comma : comma - start)));
+        if (it != page_fonts.end()) return it->second;
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    return nullptr;
+}
 
 const std::filesystem::path& app_dir() {
     namespace fs = std::filesystem;

@@ -235,16 +235,18 @@ void parse_css_properties(const std::string& properties, CssStyle& style) {
                 size_t consumed = 0;
                 float num = std::stof(val, &consumed);
                 std::string unit = trim_spaces(std::string_view(val).substr(consumed));
-                if (unit == "vw") style.width_vw = num;
-                else              style.width = num;
+                if (unit == "vw")      style.width_vw = num;
+                else if (unit == "vh") style.width_vh = num;
+                else                   style.width = num;
             } catch(...) {}
         } else if (name == "height") {
             try {
                 size_t consumed = 0;
                 float num = std::stof(val, &consumed);
                 std::string unit = trim_spaces(std::string_view(val).substr(consumed));
-                if (unit == "vh") style.height_vh = num;
-                else              style.height = num;
+                if (unit == "vh")      style.height_vh = num;
+                else if (unit == "vw") style.height_vw = num;
+                else                   style.height = num;
             } catch(...) {}
         } else if (name == "border-width") {
             try { style.border_width = std::stof(val); } catch(...) {}
@@ -263,6 +265,8 @@ void parse_css_properties(const std::string& properties, CssStyle& style) {
                 else if (unit == "em" || unit == "rem") style.font_size = num;
                 else                               style.font_size = num; // bare number: legacy multiplier
             } catch(...) {}
+        } else if (name == "font-family") {
+            style.font_family = val;
         } else if (name == "display") {
             style.display = val;
         } else if (name == "flex-direction") {
@@ -606,17 +610,20 @@ void apply_style(CssStyle& dest, const CssStyle& src) {
     if (src.margin_top > 0.0f) dest.margin_top = src.margin_top;
     if (src.margin_bottom > 0.0f) dest.margin_bottom = src.margin_bottom;
     
-    // A later rule's unit wins outright, so setting one form clears the other.
-    if (src.width > -1.0f) { dest.width = src.width; dest.width_vw = -1.0f; }
-    if (src.width_vw > -1.0f) { dest.width_vw = src.width_vw; dest.width = -1.0f; }
-    if (src.height > -1.0f) { dest.height = src.height; dest.height_vh = -1.0f; }
-    if (src.height_vh > -1.0f) { dest.height_vh = src.height_vh; dest.height = -1.0f; }
+    // A later rule's unit wins outright, so setting one form clears the others.
+    if (src.width > -1.0f)     { dest.width = src.width;         dest.width_vw = dest.width_vh = -1.0f; }
+    if (src.width_vw > -1.0f)  { dest.width_vw = src.width_vw;   dest.width = dest.width_vh = -1.0f; }
+    if (src.width_vh > -1.0f)  { dest.width_vh = src.width_vh;   dest.width = dest.width_vw = -1.0f; }
+    if (src.height > -1.0f)    { dest.height = src.height;       dest.height_vh = dest.height_vw = -1.0f; }
+    if (src.height_vh > -1.0f) { dest.height_vh = src.height_vh; dest.height = dest.height_vw = -1.0f; }
+    if (src.height_vw > -1.0f) { dest.height_vw = src.height_vw; dest.height = dest.height_vh = -1.0f; }
     if (src.border_width > 0.0f) dest.border_width = src.border_width;
     if (src.has_border_color) {
         dest.border_color = src.border_color;
         dest.has_border_color = true;
     }
     if (src.font_size != 1.0f) dest.font_size = src.font_size;
+    if (!src.font_family.empty()) dest.font_family = src.font_family;
     if (!src.display.empty()) dest.display = src.display;
 
     if (!src.flex_direction.empty()) dest.flex_direction = src.flex_direction;

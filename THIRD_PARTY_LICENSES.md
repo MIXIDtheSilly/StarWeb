@@ -71,3 +71,13 @@ or linked as a system/vcpkg dependency.
 - **License text**: the MIT notice is in the copyright block at the end of
   `src/thirdparty/lua/lua.h`.
 - **Source**: https://www.lua.org
+
+## Inter
+
+- **License**: SIL Open Font License 1.1.
+- **Version**: 4.1 (static `Inter-SemiBold.ttf` from the `extras/ttf` set; the
+  `.otf` builds use CFF outlines, which the ImGui rasterizer cannot read).
+- **How it's used**: bundled in `fonts/`, loaded at startup and registered as a
+  named face pages can select with `font-family: Inter SemiBold`.
+- **License text**: `fonts/Inter-LICENSE.txt`.
+- **Source**: https://github.com/rsms/inter
